@@ -5,8 +5,8 @@ with open('model_C=1.0.bin', 'rb') as f_in:
 
 
 def predict_single(customer):
-    # we will put our model here
-    return 0.56
+    prob = model.predict_proba([customer])[0, 1]
+    return float(prob)
 
 def lambda_handler(event, context):    
     print("Parameters:", event)
