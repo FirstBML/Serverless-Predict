@@ -64,19 +64,71 @@
 #     result = predict(url)
 #     return result
 
+# import json
+# import os
+# import numpy as np
+# import onnxruntime as ort
+# from keras_image_helper import create_preprocessor
+
+# model_name = os.getenv("MODEL_NAME", "clothing-model-new.onnx")
+
+# def preprocess_pytorch_style(X):
+#     X = X / 255.0
+#     mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+#     std = np.array([0.229, 0.224, 0.225]).reshape(1, 3, 1, 1)
+#     X = X.transpose(0, 3, 1, 2)
+#     X = (X - mean) / std
+#     return X.astype(np.float32)
+
+# preprocessor = create_preprocessor(
+#     preprocess_pytorch_style,
+#     target_size=(224, 224)
+# )
+
+# session = ort.InferenceSession(model_name, providers=["CPUExecutionProvider"])
+# input_name = session.get_inputs()[0].name
+# output_name = session.get_outputs()[0].name
+
+# classes = [
+#     "dress","hat","longsleeve","outwear","pants",
+#     "shirt","shoes","shorts","skirt","t-shirt"
+# ]
+
+# def predict(url):
+#     X = preprocessor.from_url(url)
+#     preds = session.run([output_name], {input_name: X})[0][0]
+#     return dict(zip(classes, preds.tolist()))
+
+# def lambda_handler(event, context):
+#     # API Gateway → event["body"]
+#     if "body" in event:
+#         body = json.loads(event["body"])
+#         url = body["url"]
+#     else:
+#         # direct invocation (local testing)
+#         url = event["url"]
+
+#     result = predict(url)
+
+#     return {
+#         "statusCode": 200,
+#         "headers": {"Content-Type": "application/json"},
+#         "body": json.dumps(result)
+#     }
+
 import json
 import os
 import numpy as np
 import onnxruntime as ort
 from keras_image_helper import create_preprocessor
 
-model_name = os.getenv("MODEL_NAME", "clothing-model-new.onnx")
+model_name = os.getenv("MODEL_NAME", "clothing_classifier_mobilenet_v2_latest.onnx")
 
 def preprocess_pytorch_style(X):
     X = X / 255.0
     mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
     std = np.array([0.229, 0.224, 0.225]).reshape(1, 3, 1, 1)
-    X = X.transpose(0, 3, 1, 2)
+    X = X.transpose(0, 3, 1, 2)  
     X = (X - mean) / std
     return X.astype(np.float32)
 
@@ -85,33 +137,61 @@ preprocessor = create_preprocessor(
     target_size=(224, 224)
 )
 
-session = ort.InferenceSession(model_name, providers=["CPUExecutionProvider"])
+session = ort.InferenceSession(
+    model_name, providers=["CPUExecutionProvider"]
+)
+
 input_name = session.get_inputs()[0].name
 output_name = session.get_outputs()[0].name
 
 classes = [
-    "dress","hat","longsleeve","outwear","pants",
-    "shirt","shoes","shorts","skirt","t-shirt"
+    "dress", "hat", "longsleeve", "outwear", "pants",
+    "shirt", "shoes", "shorts", "skirt", "t-shirt",
 ]
 
 def predict(url):
     X = preprocessor.from_url(url)
-    preds = session.run([output_name], {input_name: X})[0][0]
-    return dict(zip(classes, preds.tolist()))
+    result = session.run([output_name], {input_name: X})
+    float_predictions = result[0][0].tolist()
+    return dict(zip(classes, float_predictions))
 
 def lambda_handler(event, context):
-    # API Gateway → event["body"]
-    if "body" in event:
-        body = json.loads(event["body"])
-        url = body["url"]
-    else:
-        # direct invocation (local testing)
-        url = event["url"]
-
-    result = predict(url)
-
-    return {
-        "statusCode": 200,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(result)
-    }
+    try:
+        # Parse the body from API Gateway event
+        if 'body' in event:
+            body = json.loads(event['body'])
+        else:
+            body = event
+        
+        url = body.get('url')
+        
+        if not url:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'Missing url parameter'})
+            }
+        
+        result = predict(url)
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps(result)
+        }
+    
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({'error': str(e)})
+        }
